@@ -1,0 +1,11 @@
+[package]
+name = "website-ssh"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+ratatui = "0.29"
+russh = "0.53"
+simple_rss_lib = { git = 'https://github.com/viddrobnic/simple-rss.git' }
+tokio = { version = "1.46", features = ["full"] }
