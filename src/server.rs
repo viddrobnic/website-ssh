@@ -1,8 +1,9 @@
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use ratatui::{Terminal, prelude::CrosstermBackend};
-use russh::keys::ssh_key;
+use russh::keys::{PrivateKey, ssh_key};
 use russh::*;
 use russh::{keys::ssh_key::rand_core::OsRng, server::*};
 use tokio::sync::mpsc::{UnboundedSender, unbounded_channel};
@@ -22,9 +23,11 @@ impl TerminalHandle {
         let (sender, mut receiver) = unbounded_channel::<Vec<u8>>();
         tokio::spawn(async move {
             while let Some(data) = receiver.recv().await {
-                let result = handle.data(channel_id, data.into()).await;
-                if result.is_err() {
-                    eprintln!("Failed to send data: {:?}", result);
+                // Ignore this result. Usually error happens when user exits
+                // the app and connection is broken mid render.
+                let res = handle.data(channel_id, data.into()).await;
+                if res.is_err() {
+                    break;
                 }
             }
         });
@@ -65,9 +68,7 @@ impl AppServer {
             inactivity_timeout: Some(Duration::from_secs(3600)),
             auth_rejection_time: Duration::from_secs(3),
             auth_rejection_time_initial: Some(Duration::from_secs(0)),
-            keys: vec![
-                russh::keys::PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519).unwrap(),
-            ],
+            keys: vec![get_key()?],
             nodelay: true,
             ..Default::default()
         };
@@ -85,4 +86,22 @@ impl Server for AppServer {
         println!("[DEBUG]: New connection");
         Handler::new()
     }
+}
+
+fn get_key() -> anyhow::Result<PrivateKey> {
+    let path = Path::new("private_key");
+
+    // Try reading existing key
+    let key = PrivateKey::read_openssh_file(path);
+    if let Ok(key) = key {
+        println!("[INFO]: Read private key");
+        return Ok(key);
+    }
+
+    // Create a new key
+    println!("[INFO]: Creating new private key");
+    let key = PrivateKey::random(&mut OsRng, ssh_key::Algorithm::Ed25519)?;
+    key.write_openssh_file(path, ssh_key::LineEnding::LF)?;
+
+    Ok(key)
 }

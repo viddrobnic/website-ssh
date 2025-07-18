@@ -1,54 +1,39 @@
-use std::time::Duration;
+use std::{collections::HashMap, ops::DerefMut, sync::Arc};
 
 use ratatui::{Terminal, TerminalOptions, Viewport, layout::Rect, prelude::CrosstermBackend};
 use russh::{Channel, ChannelId, Pty, keys::ssh_key, server::*};
 use simple_rss_lib::{
     app::App,
-    event::{Event, EventBus, EventSender},
+    event::{Event, EventBus, EventSender, KeyboardEvent},
 };
+use tokio::sync::{Mutex, oneshot};
 
 use crate::{
+    app::{AppRunner, AppSession},
     loader::Loader,
-    server::{SshTerminal, TerminalHandle},
+    server::TerminalHandle,
 };
-
-const TICK_FPS: f64 = 30.0;
-
-struct HandlerData {
-    terminal: SshTerminal,
-    bus: EventBus,
-    app: App<Loader>,
-}
 
 #[derive(Default)]
 pub struct Handler {
-    data: Option<HandlerData>,
+    apps: HashMap<ChannelId, Arc<Mutex<AppSession>>>,
+    event_senders: HashMap<ChannelId, EventSender>,
+
+    close_tokens: HashMap<ChannelId, oneshot::Sender<()>>,
 }
 
 impl Handler {
     pub fn new() -> Self {
         Self::default()
     }
-}
 
-async fn start_ticker(sender: EventSender) {
-    println!("[INFO]: Starting new ticker");
-
-    let tick_rate = Duration::from_secs_f64(1.0 / TICK_FPS);
-    let mut tick = tokio::time::interval(tick_rate);
-    loop {
-        let tick_delay = tick.tick();
-        tokio::select! {
-          _ = sender.closed() => {
-            break;
-          }
-          _ = tick_delay => {
-            sender.send(Event::Tick);
-          }
-        };
+    fn get_session(&self, channel: &ChannelId) -> anyhow::Result<Arc<Mutex<AppSession>>> {
+        let session = self
+            .apps
+            .get(channel)
+            .ok_or_else(|| anyhow::anyhow!("Invalid channel Id"))?;
+        Ok(session.clone())
     }
-
-    println!("[INFO]: Stopping ticker")
 }
 
 impl russh::server::Handler for Handler {
@@ -70,18 +55,25 @@ impl russh::server::Handler for Handler {
         let terminal_handle = TerminalHandle::start(session.handle(), channel.id()).await;
         let backend = CrosstermBackend::new(terminal_handle);
 
-        // The correct viewport area will be set when the client request a pty
+        // The correct viewport area will be set when the client request a pty.
+        // These are some dummy values large enough for overflow not to happen.
         let options = TerminalOptions {
-            viewport: Viewport::Fixed(Rect::default()),
+            viewport: Viewport::Fixed(Rect::new(0, 0, 100, 100)),
         };
 
         let terminal = Terminal::with_options(backend, options)?;
         let bus = EventBus::new();
-        let sender = bus.get_sender();
         let app = App::new(bus.get_sender(), Loader::new(), 30);
 
-        tokio::spawn(start_ticker(sender));
-        self.data = Some(HandlerData { terminal, bus, app });
+        let app_session = Arc::new(Mutex::new(AppSession { terminal, app }));
+        let (tx, rx) = oneshot::channel();
+
+        self.apps.insert(channel.id(), app_session.clone());
+        self.event_senders.insert(channel.id(), bus.get_sender());
+        self.close_tokens.insert(channel.id(), tx);
+
+        let runner = AppRunner::new(app_session, bus, session.handle(), channel.id(), rx);
+        tokio::spawn(runner.start());
 
         Ok(true)
     }
@@ -89,12 +81,12 @@ impl russh::server::Handler for Handler {
     /// The client's window size has changed.
     async fn window_change_request(
         &mut self,
-        _: ChannelId,
+        channel: ChannelId,
         col_width: u32,
         row_height: u32,
         _: u32,
         _: u32,
-        _: &mut Session,
+        handle_session: &mut Session,
     ) -> Result<(), Self::Error> {
         let rect = Rect {
             x: 0,
@@ -103,11 +95,14 @@ impl russh::server::Handler for Handler {
             height: row_height as u16,
         };
 
-        let data = self.data.as_mut().unwrap();
+        let session = self.get_session(&channel)?;
+        let mut sess_lock = session.lock().await;
+        let sess = sess_lock.deref_mut();
 
-        data.terminal.resize(rect)?;
-        data.terminal.draw(|f| data.app.draw(f))?;
+        sess.terminal.resize(rect)?;
+        sess.terminal.draw(|f| sess.app.draw(f))?;
 
+        handle_session.channel_success(channel)?;
         Ok(())
     }
 
@@ -120,7 +115,7 @@ impl russh::server::Handler for Handler {
         _: u32,
         _: u32,
         _: &[(Pty, u32)],
-        session: &mut Session,
+        handle_session: &mut Session,
     ) -> Result<(), Self::Error> {
         let rect = Rect {
             x: 0,
@@ -129,28 +124,46 @@ impl russh::server::Handler for Handler {
             height: row_height as u16,
         };
 
-        let data = self.data.as_mut().unwrap();
+        let session = self.get_session(&channel)?;
+        let mut sess_lock = session.lock().await;
+        let sess = sess_lock.deref_mut();
 
-        data.terminal.resize(rect)?;
-        data.terminal.draw(|f| data.app.draw(f))?;
+        sess.terminal.resize(rect)?;
+        sess.terminal.draw(|f| sess.app.draw(f))?;
 
-        session.channel_success(channel)?;
-
+        handle_session.channel_success(channel)?;
         Ok(())
     }
 
     async fn data(
         &mut self,
-        chan: ChannelId,
+        channel: ChannelId,
         data: &[u8],
-        session: &mut Session,
+        _: &mut Session,
     ) -> Result<(), Self::Error> {
-        // TODO: Implement me
-        if data[0] == 'q' as u8 {
-            session.close(chan)?;
+        // This should probably be a more correct way of handling ansii escape codes.
+        // But this seems to do the trick in cases I tested.
+        let event = match data {
+            [b'h'] | [27, 91, 68] => KeyboardEvent::Left,
+            [b'l'] | [27, 91, 67] => KeyboardEvent::Right,
+            [b'k'] | [27, 91, 65] => KeyboardEvent::Up,
+            [b'j'] | [27, 91, 66] => KeyboardEvent::Down,
+            [b'q'] | [27] => KeyboardEvent::Back,
+            [13] => KeyboardEvent::Enter,
+            [b' '] => KeyboardEvent::Space,
+            [b'o'] => KeyboardEvent::Open,
+            [b'?'] => KeyboardEvent::Open,
+
+            // Ignore other events
+            _ => return Ok(()),
+        };
+        println!("[DEBUG]: Got event: {:?}", event);
+
+        let sender = self.event_senders.get(&channel);
+        if let Some(sender) = sender {
+            sender.send(Event::Keyboard(event));
         }
 
-        println!("[DEBUG]: Got data: {:?}", data);
         Ok(())
     }
 }

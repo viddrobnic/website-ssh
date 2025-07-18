@@ -1,5 +1,6 @@
 use server::AppServer;
 
+mod app;
 mod handler;
 mod loader;
 mod server;
