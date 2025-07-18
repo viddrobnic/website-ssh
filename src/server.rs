@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -56,11 +56,14 @@ impl std::io::Write for TerminalHandle {
     }
 }
 
-pub struct AppServer;
+pub struct AppServer {
+    port: u16,
+    key_path: PathBuf,
+}
 
 impl AppServer {
-    pub fn new() -> Self {
-        Self
+    pub fn new(port: u16, key_path: PathBuf) -> Self {
+        Self { port, key_path }
     }
 
     pub async fn run(&mut self) -> anyhow::Result<()> {
@@ -68,12 +71,12 @@ impl AppServer {
             inactivity_timeout: Some(Duration::from_secs(3600)),
             auth_rejection_time: Duration::from_secs(3),
             auth_rejection_time_initial: Some(Duration::from_secs(0)),
-            keys: vec![get_key()?],
+            keys: vec![get_key(&self.key_path)?],
             nodelay: true,
             ..Default::default()
         };
 
-        self.run_on_address(Arc::new(config), ("0.0.0.0", 2222))
+        self.run_on_address(Arc::new(config), ("0.0.0.0", self.port))
             .await?;
         Ok(())
     }
@@ -88,9 +91,7 @@ impl Server for AppServer {
     }
 }
 
-fn get_key() -> anyhow::Result<PrivateKey> {
-    let path = Path::new("private_key");
-
+fn get_key(path: &Path) -> anyhow::Result<PrivateKey> {
     // Try reading existing key
     let key = PrivateKey::read_openssh_file(path);
     if let Ok(key) = key {
