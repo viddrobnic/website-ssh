@@ -152,7 +152,7 @@ impl russh::server::Handler for Handler {
             [13] => KeyboardEvent::Enter,
             [b' '] => KeyboardEvent::Space,
             [b'o'] => KeyboardEvent::Open,
-            [b'?'] => KeyboardEvent::Open,
+            [b'?'] => KeyboardEvent::Help,
 
             // Ignore other events
             _ => return Ok(()),

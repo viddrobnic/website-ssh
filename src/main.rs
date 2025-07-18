@@ -12,9 +12,11 @@ mod server;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Cli {
+    /// Port on which the server runs.
     #[arg(short, long, default_value_t = 22)]
     port: u16,
 
+    /// Location of the server's private key.
     #[arg(long, default_value = "private_key")]
     key_path: PathBuf,
 }
