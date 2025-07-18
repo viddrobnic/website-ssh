@@ -1,9 +1,12 @@
 use std::{collections::HashMap, ops::DerefMut, sync::Arc};
 
-use ratatui::{Terminal, TerminalOptions, Viewport, layout::Rect, prelude::CrosstermBackend};
+use ratatui::{
+    Terminal, TerminalOptions, Viewport, layout::Rect, prelude::CrosstermBackend, style::Stylize,
+    widgets::Paragraph,
+};
 use russh::{Channel, ChannelId, Pty, keys::ssh_key, server::*};
 use simple_rss_lib::{
-    app::App,
+    app::{App, AppConfig},
     event::{Event, EventBus, EventSender, KeyboardEvent},
 };
 use tokio::sync::{Mutex, oneshot};
@@ -63,7 +66,18 @@ impl russh::server::Handler for Handler {
 
         let terminal = Terminal::with_options(backend, options)?;
         let bus = EventBus::new();
-        let app = App::new(bus.get_sender(), Loader::new(), 30);
+        let app = App::new(
+            AppConfig {
+                item_list_custom_empty_msg: Some(
+                    Paragraph::new("Loading items...").centered().bold(),
+                ),
+                disable_read_status: true,
+                disable_channel_names: true,
+            },
+            bus.get_sender(),
+            Loader::new(),
+            30,
+        );
 
         let app_session = Arc::new(Mutex::new(AppSession { terminal, app }));
         let (tx, rx) = oneshot::channel();
