@@ -2480,7 +2480,7 @@ dependencies = [
 [[package]]
 name = "simple_rss_lib"
 version = "0.1.0"
-source = "git+https://github.com/viddrobnic/simple-rss.git?branch=master#40e272f047d0228ce4e2f48b8b0abf322ee47810"
+source = "git+https://github.com/viddrobnic/simple-rss.git?branch=master#07098827d2f823f6b68c650af8af7f93f2d28118"
 dependencies = [
  "chrono",
  "ego-tree",
