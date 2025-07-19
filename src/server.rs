@@ -86,7 +86,6 @@ impl Server for AppServer {
     type Handler = Handler;
 
     fn new_client(&mut self, _: Option<std::net::SocketAddr>) -> Self::Handler {
-        println!("[DEBUG]: New connection");
         Handler::new()
     }
 }

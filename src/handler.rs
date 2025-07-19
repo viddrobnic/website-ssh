@@ -76,7 +76,7 @@ impl russh::server::Handler for Handler {
                 disable_browser_open: true,
             },
             bus.get_sender(),
-            Loader::new(),
+            Loader::new(bus.get_sender()),
             30,
         );
 
@@ -172,7 +172,6 @@ impl russh::server::Handler for Handler {
             // Ignore other events
             _ => return Ok(()),
         };
-        println!("[DEBUG]: Got event: {event:?}");
 
         let sender = self.event_senders.get(&channel);
         if let Some(sender) = sender {

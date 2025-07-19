@@ -79,7 +79,6 @@ impl AppRunner {
             }
 
             if event == Event::Keyboard(KeyboardEvent::Back) {
-                println!("[DEBUG]: User exited");
                 let _ = self.session_handle.close(self.channel).await;
                 break;
             }
