@@ -11,14 +11,10 @@ on:
 jobs:
   lint-and-build:
     runs-on: ubuntu-latest
+    container: rust:1.88-bookworm
 
     steps:
       - uses: actions/checkout@v4
-
-      - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
 
       - name: Cache cargo registry
         uses: actions/cache@v4
@@ -27,21 +23,23 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+          key: debian-bullseye-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run rustfmt
-        run: cargo fmt --all --check
+        run: |
+          cargo fmt --all --check
 
       - name: Run clippy
-        run: cargo clippy
+        run: |
+          cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Build release binary
-        run: cargo build --release --target x86_64-unknown-linux-gnu
+        run: |
+          cargo build --release
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
           name: website-ssh-linux-x86_64
-          path: target/x86_64-unknown-linux-gnu/release/website-ssh
+          path: target/release/website-ssh
           retention-days: 30
-

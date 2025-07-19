@@ -93,7 +93,7 @@ impl simple_rss_lib::data::Loader for Loader {
             })
             .collect();
 
-        let about_url = items.get(0).map(|it| it.link.clone());
+        let about_url = items.first().map(|it| it.link.clone());
 
         let mut data = self.data.lock().unwrap();
         *data = items;
