@@ -154,7 +154,7 @@ impl russh::server::Handler for Handler {
         &mut self,
         channel: ChannelId,
         data: &[u8],
-        _: &mut Session,
+        session: &mut Session,
     ) -> Result<(), Self::Error> {
         // This should probably be a more correct way of handling ansii escape codes.
         // But this seems to do the trick in cases I tested.
@@ -168,6 +168,12 @@ impl russh::server::Handler for Handler {
             [b' '] => KeyboardEvent::Space,
             [b'o'] => KeyboardEvent::Open,
             [b'?'] => KeyboardEvent::Help,
+
+            // Handle ctrl+c and ctrl+d
+            [3] | [4] => {
+                let _ = session.close(channel);
+                return Ok(());
+            }
 
             // Ignore other events
             _ => return Ok(()),
