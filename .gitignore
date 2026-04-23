@@ -1,3 +1,5 @@
 /target
 /private_key
 .DS_Store
+/.direnv
+/result
