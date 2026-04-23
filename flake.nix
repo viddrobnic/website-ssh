@@ -93,6 +93,49 @@
           checks = self.checks.${system};
         };
 
+        nixosModules.default =
+          {
+            lib,
+            pkgs,
+            config,
+            ...
+          }:
+          let
+            cfg = config.services.website-ssh;
+          in
+          {
+            options.services.website-ssh = {
+              enable = lib.mkEnableOption "website-ssh";
+
+              port = lib.mkOption {
+                type = lib.types.port;
+                default = 2222;
+              };
+            };
+
+            config = lib.mkIf cfg.enable {
+              systemd.services.website-ssh = {
+                description = "Website SSH";
+                wantedBy = [ "multi-user.target" ];
+                after = [ "network.target" ];
+
+                serviceConfig = {
+                  ExecStart = "${self.packages.${pkgs.system}.default}/bin/website-ssh -p ${toString cfg.port}";
+
+                  DynamicUser = true;
+                  StateDirectory = "website-ssh";
+                  WorkingDirectory = "/var/lib/website-ssh";
+
+                  Restart = "on-failure";
+                  RestartSec = 5;
+
+                  StandardOutput = "journal";
+                  StandardError = "journal";
+                };
+              };
+            };
+          };
+
         formatter = nixpkgs.legacyPackages.${system}.nixfmt-tree;
       }
     );
