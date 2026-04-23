@@ -135,6 +135,8 @@
 
                 StandardOutput = "journal";
                 StandardError = "journal";
+
+                AmbientCapabilities = [ "CAP_NET_BIND_SERVICE" ];
               };
             };
           };
