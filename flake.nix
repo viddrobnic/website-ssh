@@ -124,7 +124,9 @@
               after = [ "network.target" ];
 
               serviceConfig = {
-                ExecStart = "${self.packages.${pkgs.system}.default}/bin/website-ssh -p ${toString cfg.port}";
+                ExecStart = "${
+                  self.packages.${pkgs.stdenv.hostPlatform.system}.default
+                }/bin/website-ssh -p ${toString cfg.port}";
 
                 DynamicUser = true;
                 StateDirectory = "website-ssh";
