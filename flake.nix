@@ -5,99 +5,85 @@
     nixpkgs.url = "github:nixos/nixpkgs/nixpkgs-unstable";
 
     crane.url = "github:ipetkov/crane";
-
-    rust-overlay = {
-      url = "github:oxalica/rust-overlay";
-      inputs.nixpkgs.follows = "nixpkgs";
-    };
-
-    flake-utils.url = "github:numtide/flake-utils";
+    flake-parts.url = "github:hercules-ci/flake-parts";
   };
 
   outputs =
-    {
+    inputs@{
       self,
-      nixpkgs,
       crane,
-      rust-overlay,
-      flake-utils,
+      flake-parts,
       ...
     }:
-    flake-utils.lib.eachDefaultSystem (
-      system:
-      let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ rust-overlay.overlays.default ];
-        };
+    flake-parts.lib.mkFlake { inherit inputs; } {
+      systems = [
+        "x86_64-linux"
+        "aarch64-linux"
+        "aarch64-darwin"
+      ];
 
-        craneLib = (crane.mkLib pkgs).overrideToolchain (
-          p:
-          p.rust-bin.stable.latest.default.override {
-            extensions = [
-              "rust-src"
-              "rust-analyzer"
-              "llvm-tools"
-            ];
-          }
-        );
+      perSystem =
+        { config, pkgs, ... }:
+        let
+          craneLib = crane.mkLib pkgs;
 
-        src = craneLib.cleanCargoSource ./.;
+          src = craneLib.cleanCargoSource ./.;
 
-        commonArgs = {
-          inherit src;
-          strictDeps = true;
+          commonArgs = {
+            inherit src;
+            strictDeps = true;
 
-          nativeBuildInputs = [ pkgs.pkg-config ];
-          buildInputs = [ pkgs.openssl ];
-        };
+            nativeBuildInputs = [ pkgs.pkg-config ];
+            buildInputs = [ pkgs.openssl ];
+          };
 
-        cargoArtifacts = craneLib.buildDepsOnly commonArgs;
+          cargoArtifacts = craneLib.buildDepsOnly commonArgs;
 
-        website-ssh = craneLib.buildPackage (
-          commonArgs
-          // {
-            inherit cargoArtifacts;
-          }
-        );
-      in
-      {
-        checks = {
-          inherit website-ssh;
-
-          website-ssh-clippy = craneLib.cargoClippy (
+          website-ssh = craneLib.buildPackage (
             commonArgs
             // {
               inherit cargoArtifacts;
-              cargoClippyExtraArgs = "--all-features";
             }
           );
+        in
+        {
+          checks = {
+            inherit website-ssh;
 
-          # Check formatting
-          website-ssh-fmt = craneLib.cargoFmt {
-            inherit src;
+            website-ssh-clippy = craneLib.cargoClippy (
+              commonArgs
+              // {
+                inherit cargoArtifacts;
+                cargoClippyExtraArgs = "--all-features";
+              }
+            );
+
+            # Check formatting
+            website-ssh-fmt = craneLib.cargoFmt {
+              inherit src;
+            };
+
+            website-ssh-toml-fmt = craneLib.taploFmt {
+              src = pkgs.lib.sources.sourceFilesBySuffices src [ ".toml" ];
+            };
           };
 
-          website-ssh-toml-fmt = craneLib.taploFmt {
-            src = pkgs.lib.sources.sourceFilesBySuffices src [ ".toml" ];
+          packages.default = website-ssh;
+
+          apps.default = {
+            type = "app";
+            program = "${website-ssh}/bin/website-ssh";
+            meta.description = "Run website-ssh.";
           };
+
+          devShells.default = craneLib.devShell {
+            checks = config.checks;
+          };
+
+          formatter = pkgs.nixfmt-tree;
         };
 
-        packages.default = website-ssh;
-
-        apps.default = flake-utils.lib.mkApp {
-          drv = website-ssh;
-        };
-
-        devShells.default = craneLib.devShell {
-          checks = self.checks.${system};
-        };
-
-        formatter = nixpkgs.legacyPackages.${system}.nixfmt-tree;
-      }
-    )
-    // {
-      nixosModules.default =
+      flake.nixosModules.default =
         {
           lib,
           pkgs,
