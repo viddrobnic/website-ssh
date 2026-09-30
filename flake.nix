@@ -78,6 +78,10 @@
 
           devShells.default = craneLib.devShell {
             checks = config.checks;
+
+            packages = [
+              pkgs.rust-analyzer
+            ];
           };
 
           formatter = pkgs.nixfmt-tree;
